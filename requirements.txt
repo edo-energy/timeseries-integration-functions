@@ -1,0 +1,12 @@
+# DO NOT include azure-functions-worker in this file
+# The Python Worker is managed by Azure Functions platform
+# Manually managing azure-functions-worker may cause unexpected issues
+
+azure-functions
+azure-functions-durable
+azure-keyvault-secrets
+azure-identity
+pandas
+mysql-connector-python==8.0.26
+# https://github.com/Azure/azure-functions-python-worker/issues/1050
+protobuf >= 3.19.3, == 3.*

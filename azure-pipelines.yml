@@ -1,0 +1,83 @@
+trigger:
+- main
+- develop
+
+variables:
+  # Agent VM image name
+  vmImageName: 'ubuntu-latest'
+
+  # Working Directory
+  workingDirectory: '$(System.DefaultWorkingDirectory)/'
+
+resources:
+  containers:
+    - container: mariadb
+      endpoint: 'Edo - Not InfoCentre Container Registry Service'
+      image: mcktechsolutions.azurecr.io/edgardb-data:latest
+      ports:
+        - 3306:3306
+
+stages:
+- stage: Build
+  displayName: Build stage
+
+  jobs:
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: $(vmImageName)
+    services:
+      mariadb: mariadb
+
+    steps:
+    - task: UsePythonVersion@0
+      displayName: 'Use Python 3.9'
+      inputs:
+        versionSpec: 3.9
+
+    - bash: |
+        pip install -r ./requirements-dev.txt
+      workingDirectory: $(workingDirectory)
+      displayName: 'Install Dependencies for Tests'
+
+    - bash: |
+        until mysql -h "127.0.0.1" -u "root" -e '\q'; do
+          >&2 echo "MariaDB is unavailable - sleeping"
+          sleep 1
+        done
+          
+        >&2 echo "MariaDB is up"
+      displayName: 'Wait for MariaDB'
+
+    - script: |
+        pytest --doctest-modules --junitxml=junit/test-results.xml --cov=. --cov-report=xml --cov-report=html
+      displayName: 'Test With pytest'
+      
+    - task: PublishTestResults@2
+      condition: succeededOrFailed()
+      inputs:
+        testResultsFiles: '**/test-*.xml'
+        testRunTitle: 'Python 3.9 Test Results'
+
+    - task: PublishCodeCoverageResults@1
+      inputs:
+        codeCoverageTool: Cobertura
+        summaryFileLocation: '$(workingDirectory)/**/coverage.xml'
+        reportDirectory: '$(workingDirectory)/**/htmlcov'
+
+    - bash: |
+        pip install --target="./.python_packages/lib/site-packages" -r ./requirements.txt
+      workingDirectory: $(workingDirectory)
+      displayName: 'Install Dependencies for Packaging'
+
+    - task: ArchiveFiles@2
+      displayName: 'Archive Files'
+      inputs:
+        rootFolderOrFile: '$(workingDirectory)'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+        replaceExistingArchive: true
+
+    - publish: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+      artifact: drop
