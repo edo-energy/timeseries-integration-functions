@@ -3,6 +3,27 @@ import requests as r
 import json
 import pandas as pd
 
+select_dates_sql = """SELECT SiteID,PointID,TIMESTAMP(date_value) AS 'ts'
+    FROM dim_date LEFT JOIN tr
+    ON (tr.datevalue = dim_date.date_value AND SiteID=140 AND PointID=%s)
+    WHERE dim_date.date_value >= DATE_SUB(NOW(), INTERVAL %s YEAR)
+    AND dim_date.date_value < DATE(NOW())
+    AND tr.datevalue IS NULL"""
+
+
+def get_missing_dates(conn, pointid) -> pd.DataFrame:
+    lb_years = 0.5
+
+    with conn.cursor() as cur:
+        cur.execute(select_dates_sql, (pointid, lb_years))
+
+        dates_result = cur.fetchall()
+
+        df_dates = pd.DataFrame(dates_result, columns=['SiteID', 'PointID', 'ts'])
+
+    return df_dates
+
+
 def main():
     # no more than 1000 calls per run
     cur_calls = 0
@@ -27,24 +48,18 @@ def main():
     (SiteID, PointName, PointClassID)
     Values(%s,%s,%s)"""
 
-    select_dates_sql = """SELECT SiteID,PointID,TIMESTAMP(date_value) AS 'ts'
-    FROM dim_date LEFT JOIN tr
-    ON (tr.datevalue = dim_date.date_value AND SiteID=140 AND PointID=%s)
-    WHERE dim_date.date_value >= DATE_SUB(NOW(), INTERVAL %s YEAR)
-    AND dim_date.date_value < DATE(NOW())
-    AND tr.datevalue IS NULL"""
+    insert_trends_sql = """INSERT INTO tr
+    (SiteID, PointID, datevalue, timevalue, rdValue, NumericValue)
+    VALUES (%s, %s, %s, %s, %s, %s)"""
 
     # get the currently enabled regression weather stations
     with db.cursor() as cur:
         cur.execute(select_stations_sql)
-        
-        df_stations = cur.fetchall()
+
+        df_stations = list(cur.fetchall())
 
     # all the weather points are held in site 140
     siteid = 140
-
-    # years to look back
-    lb_years = 0.5
 
     # key to point class match
     characteristics = {
@@ -66,9 +81,9 @@ def main():
     apiParameters = list(characteristics.keys())
 
     # iterate through each of the stations and fill any required data
-    for index, station in df_stations.iterrows():
-        
-        print(station['Link'])
+    for station in df_stations:
+
+        print(station[3])
 
         # dict to hold point ids
         point_ids = {}
@@ -77,7 +92,7 @@ def main():
         for key, value in characteristics.items():
             # init key
             point_ids[key] = {}
-            point_name = station['Link'] + '-' + key
+            point_name = station[3] + '-' + key
 
             with db.cursor() as cur:
                 cur.execute(select_point_sql, (siteid, point_name))
@@ -86,7 +101,7 @@ def main():
 
                 # check to see if a new point needs to be created
                 if point_result is None:
-                    cur.execute(insert_point_sql, (siteid, point_name, value["id"]))
+                    cur.execute(insert_point_sql, (siteid, point_name, value))
 
                     cur.execute(select_point_sql, (siteid, point_name))
 
@@ -100,33 +115,29 @@ def main():
             print(f"Found point {point_result[0]} for {point_name}.")
 
         # dates that need to get data for current point
-        with db.cursor() as cur:
-            cur.execute(select_dates_sql, (station['PointID'], lb_years))
-
-            dates_result = cur.fetchall()
-
-            df_dates = pd.DataFrame(dates_result, columns=['SiteID, PointID, ts'])
+        df_dates = get_missing_dates(db, station[4])
 
         # base url to make the requests to
         base_url = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/"
 
         if len(df_dates) == 0:
-            print(f"No new data needed for {station['Link']}")
+            print(f"No new data needed for {station[3]}")
             continue
 
         for index, missing in df_dates.iterrows():
             print(missing['ts'])
-            
+
             # make the api request to get the required weather data
-            response = r.get(base_url + f"{station['Latitude']},{station['Longitude']}/" + missing['ts'].strftime("%Y-%m-%d")+f"?key={vc_api_key}" + "&include=hours" + f"&elements={','.join(apiParameters)}")
-            
+            response = r.get(base_url + f"{station[1]},{station[2]}/" + missing['ts'].strftime("%Y-%m-%d")+f"?key={vc_api_key}" + "&include=hours" + f"&elements={','.join(apiParameters)}")
+
             cur_calls += 1
 
             # parse the json response data
             json_response = json.loads(response.text)
+            weather_data = json_response['days'][0]['hours']
 
             # read the response into a dataframe
-            df = pd.DataFrame.from_records(json_response['days']['hours'])
+            df = pd.DataFrame.from_records(weather_data)
 
             # read the timezone
             timezone = json_response['timezone']
@@ -143,21 +154,24 @@ def main():
             df = df.loc[~df.index.duplicated(keep='first')]
 
             # build each of the series
-            for key,value in point_ids.items():
+            for key, value in point_ids.items():
                 # array to hold values for current point
                 values = []
 
                 point_ids[key]['Values'] += df[key].reset_index().values.tolist()
 
         # insert the data into EDGAR
-        for key,value in point_ids.items():
+        for key, value in point_ids.items():
             with db.cursor() as cur:
-
-                db.insertTrends(value['ID'], siteid, value['Values'])
+                params = []
+                for trend in value['Values']:
+                    params.append((siteid, value['ID'], trend[0].strftime('%Y-%m-%d'), trend[0].strftime('%H:%M:%S'), str(trend[1]), float(trend[1])))
+                
+                cur.executemany(insert_trends_sql, params)
 
         # indicate that this station was looked at by updating the LastRun column
         with db.cursor() as cur:
-            cur.execute("""UPDATE regressionweatherstations SET LastRun = NOW() WHERE ID = %s""", (station['ID']))
+            cur.execute("""UPDATE regressionweatherstations SET LastRun = NOW() WHERE ID = %s""", (station[0],))
 
     # update degree days
     with db.cursor() as cur:
@@ -168,12 +182,12 @@ def main():
                 LEFT JOIN regressionweatherstations ON (regressionweatherdeppoints.WeatherStationID = regressionweatherstations.ID)
                 LEFT JOIN pointdaily p1 ON (p1.PointID = regressionweatherstations.PointID)
                 LEFT JOIN pointdaily p2 ON (p2.PointID = regressionweatherdeppoints.PointID AND p1.DateValue = p2.DateValue)
-                LEFT JOIN POINT ON (point.ID = regressionweatherdeppoints.PointID)
+                LEFT JOIN point ON (point.ID = regressionweatherdeppoints.PointID)
                 LEFT JOIN pointmetadata ON (pointmetadata.point_id = point.ID AND pointmetadata.Metadata_id=624)
                 LEFT JOIN tr ON (tr.SiteID = 140 AND tr.PointID = regressionweatherstations.PointID AND tr.datevalue = p1.Datevalue)
                 WHERE regressionweatherstations.Enabled = 1 AND (p2.NewRecords IS NULL OR p2.NewRecords < p1.NewRecords)
                 GROUP BY PointID,DateValue""")
-        
+
         # insert the degree day records into their own points
         cur.execute("""INSERT INTO tr (SiteID,PointID,datevalue,timevalue,NumericValue) (SELECT * FROM degreedays) ON DUPLICATE KEY UPDATE NumericValue=VALUES(NumericValue)""")
 
@@ -182,10 +196,10 @@ def main():
 
         # update site aliased points
         # insert any new points that need to be created
-        cur.execute("""INSERT INTO point (SiteID,PointName, BldgID,PointClassID, TypeID) 
-                                        (SELECT building.SiteID, 
-                                                CONCAT(building.BuildingName,' ',SUBSTRING(weather.PointName,6)) AS 'PointName', 
-                                                regressionweatherstationalias.BuildingID, 
+        cur.execute("""INSERT INTO point (SiteID,PointName, BldgID,PointClassID, TypeID)
+                                        (SELECT building.SiteID,
+                                                CONCAT(building.BuildingName,' ',SUBSTRING(weather.PointName,6)) AS 'PointName',
+                                                regressionweatherstationalias.BuildingID,
                                                 weather.PointClassID,
                                                 7
                                         FROM regressionweatherstationalias
@@ -195,13 +209,13 @@ def main():
                                         LEFT JOIN point ON (building.ID = point.BldgID AND weather.PointClassID = point.PointClassID AND point.Hidden=0)
                                         WHERE point.ID IS NULL
                                         )""")
-        
-         # create a temporary table to hold the data to insert into the aliased points
-        cur.execute("""CREATE TEMPORARY TABLE weatheralias 
-                                SELECT building.SiteID, 
-                                        point.ID, 
-                                        tr.datevalue, 
-                                        tr.timevalue, 
+
+        # create a temporary table to hold the data to insert into the aliased points
+        cur.execute("""CREATE TEMPORARY TABLE weatheralias
+                                SELECT building.SiteID,
+                                        point.ID,
+                                        tr.datevalue,
+                                        tr.timevalue,
                                         tr.NumericValue
                                 FROM regressionweatherstationalias
                                 JOIN building ON (regressionweatherstationalias.BuildingID = building.ID)
@@ -218,3 +232,5 @@ def main():
 
         # drop the temporary table
         cur.execute("""DROP TEMPORARY TABLE weatheralias""")
+
+    db.commit()
