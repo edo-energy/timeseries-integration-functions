@@ -1,9 +1,9 @@
 import datetime
+import os
 import pytest
 
 import pandas as pd
 from pytest_mock import MockerFixture
-from unittest.mock import patch, MagicMock
 
 from WeatherCollection import main, get_missing_dates
 
@@ -410,8 +410,14 @@ def test_get_missing_dates(db):
 
 def test_WeatherCollection(mocker: MockerFixture):
     # Arrange
-    missing_dates = pd.DataFrame([(None, None, datetime.datetime(2000, 1, 1))], columns=['SiteID', 'PointID', 'ts'])
-    mock_get_missing_dates = mocker.patch('WeatherCollection.get_missing_dates', return_value=missing_dates)
+    missing_dates = pd.DataFrame(
+        [(None, None, datetime.datetime(2000, 1, 1))],
+        columns=['SiteID', 'PointID', 'ts']
+    )
+    mocker.patch(
+        'WeatherCollection.get_missing_dates',
+        return_value=missing_dates
+    )
 
     mock_json = mocker.Mock()
     mock_json.return_value = visual_crossing_response
@@ -419,8 +425,10 @@ def test_WeatherCollection(mocker: MockerFixture):
     mock_api = mocker.patch('WeatherCollection.r.get')
     mock_api.return_value.json = mock_json
 
+    mocker.patch.dict(os.environ, {"VC_API_KEY": "test"})
+
     # Act
     main()
 
     # Assert
-    assert 5 == 5
+    assert mock_api.call_count > 0

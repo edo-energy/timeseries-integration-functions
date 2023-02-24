@@ -1,20 +1,34 @@
 import logging
+import os
 from urllib.parse import urljoin
 
+from mysql.connector import MySQLConnection
 import pandas as pd
 import requests as r
 
 from shared_code.database import getConnection
 
-select_dates_sql = """SELECT SiteID,PointID,TIMESTAMP(date_value) AS 'ts'
-    FROM dim_date LEFT JOIN tr
-    ON (tr.datevalue = dim_date.date_value AND SiteID=140 AND PointID=%s)
-    WHERE dim_date.date_value >= DATE_SUB(NOW(), INTERVAL %s YEAR)
-    AND dim_date.date_value < DATE(NOW())
-    AND tr.datevalue IS NULL"""
+select_dates_sql = """
+SELECT
+  SiteID,
+  PointID,
+  TIMESTAMP(date_value) AS 'ts'
+FROM
+  dim_date
+LEFT JOIN
+  tr ON (
+    tr.datevalue = dim_date.date_value
+    AND SiteID = 140
+    AND PointID = %s
+  )
+WHERE
+  dim_date.date_value >= DATE_SUB(NOW(), INTERVAL %s YEAR)
+  AND dim_date.date_value < DATE(NOW())
+  AND tr.datevalue IS NULL
+"""
 
 
-def get_missing_dates(conn, pointid) -> pd.DataFrame:
+def get_missing_dates(conn: MySQLConnection, pointid: int) -> pd.DataFrame:
     lb_years = 0.5
 
     with conn.cursor() as cur:
@@ -35,7 +49,11 @@ def main():
     cur_calls = 0
 
     # api key for visual crossing requests
-    vc_api_key = '5CWUQYAC3RW2MP4GSKNR7H2P5'
+    vc_api_key = os.environ.get("VC_API_KEY")
+
+    # ensure api key is defined
+    if vc_api_key is None:
+        raise ValueError("VC_API_KEY is not defined.")
 
     # EDGAR database connection
     db = getConnection()
