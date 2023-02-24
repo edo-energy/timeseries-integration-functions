@@ -1,8 +1,10 @@
+import logging
 from urllib.parse import urljoin
-from shared_code.database import getConnection
-import requests as r
-import json
+
 import pandas as pd
+import requests as r
+
+from shared_code.database import getConnection
 
 select_dates_sql = """SELECT SiteID,PointID,TIMESTAMP(date_value) AS 'ts'
     FROM dim_date LEFT JOIN tr
@@ -53,7 +55,9 @@ def main():
 
     insert_trends_sql = """INSERT INTO tr
     (SiteID, PointID, datevalue, timevalue, rdValue, NumericValue)
-    VALUES (%s, %s, %s, %s, %s, %s)"""
+    VALUES (%s, %s, %s, %s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+      rdValue=VALUES(rdValue), NumericValue=VALUES(NumericValue)"""
 
     # get the currently enabled regression weather stations
     with db.cursor() as cur:
@@ -86,7 +90,7 @@ def main():
     # iterate through each of the stations and fill any required data
     for station in df_stations:
 
-        print(station[3])
+        logging.info(station[3])
 
         # dict to hold point ids
         point_ids = {}
@@ -110,26 +114,28 @@ def main():
 
                     point_result = cur.fetchone()
 
-                    print(f"Created point {point_result[0]} for {point_name}.")
+                    logging.info(
+                        f"Created point {point_result[0]} for {point_name}."
+                    )
 
             point_ids[key]['ID'] = point_result[0]
             point_ids[key]['Values'] = []
 
-            print(f"Found point {point_result[0]} for {point_name}.")
+            logging.info(f"Found point {point_result[0]} for {point_name}.")
 
         # dates that need to get data for current point
         df_dates = get_missing_dates(db, station[4])
 
         # base url to make the requests to
-        base_url = "https://weather.visualcrossing.com/"
-        "VisualCrossingWebServices/rest/services/timeline/"
+        base_url = "https://weather.visualcrossing.com/"\
+            "VisualCrossingWebServices/rest/services/timeline/"
 
         if len(df_dates) == 0:
-            print(f"No new data needed for {station[3]}")
+            logging.info(f"No new data needed for {station[3]}")
             continue
 
         for _, missing in df_dates.iterrows():
-            print(missing['ts'])
+            logging.info(missing['ts'])
 
             # make the api request to get the required weather data
             params = {
@@ -140,15 +146,16 @@ def main():
             response = r.get(
                 urljoin(
                     base_url,
-                    f"{station[1]},{station[2]}",
+                    f"{station[1]},{station[2]}/" +
                     missing['ts'].strftime("%Y-%m-%d")
-                )
+                ),
+                params
             )
 
             cur_calls += 1
 
             # parse the json response data
-            json_response = json.loads(response.text)
+            json_response = response.json()
             weather_data = json_response['days'][0]['hours']
 
             # read the response into a dataframe
@@ -256,7 +263,7 @@ def main():
                 regressionweatherdeppoints.PointID
                 AND p1.DateValue = p2.DateValue
               )
-            LEFT JOIN
+            JOIN
               point ON (
                 point.ID =
                 regressionweatherdeppoints.PointID

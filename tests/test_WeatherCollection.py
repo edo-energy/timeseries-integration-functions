@@ -1,4 +1,5 @@
 import datetime
+import pytest
 
 import pandas as pd
 from pytest_mock import MockerFixture
@@ -396,23 +397,27 @@ visual_crossing_response = {
 }
 
 
+@pytest.fixture(scope="module", autouse=True)
+def db_fixture(db, module_mocker):
+    module_mocker.patch("WeatherCollection.getConnection", return_value=db)
+
+
 def test_get_missing_dates(db):
     results = get_missing_dates(db, 88242)
 
     assert results.size > 0
 
 
-def test_WeatherCollection(db, mocker):
+def test_WeatherCollection(mocker: MockerFixture):
     # Arrange
-    mock_connection = mocker.patch('WeatherCollection.getConnection', return_value=db)
-
     missing_dates = pd.DataFrame([(None, None, datetime.datetime(2000, 1, 1))], columns=['SiteID', 'PointID', 'ts'])
     mock_get_missing_dates = mocker.patch('WeatherCollection.get_missing_dates', return_value=missing_dates)
 
+    mock_json = mocker.Mock()
+    mock_json.return_value = visual_crossing_response
+
     mock_api = mocker.patch('WeatherCollection.r.get')
-    mock_api.return_value.text = str(visual_crossing_response)
-    mock_json = mocker.patch('WeatherCollection.json')
-    mock_json.loads.return_value = visual_crossing_response
+    mock_api.return_value.json = mock_json
 
     # Act
     main()
