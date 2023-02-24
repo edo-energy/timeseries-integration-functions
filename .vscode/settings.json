@@ -6,7 +6,7 @@
     "azureFunctions.projectRuntime": "~3",
     "debug.internalConsoleOptions": "neverOpen",
     "python.linting.flake8Enabled": true,
-    "python.linting.enabled": false,
+    "python.linting.enabled": true,
     "python.testing.pytestArgs": [
         "tests"
     ],

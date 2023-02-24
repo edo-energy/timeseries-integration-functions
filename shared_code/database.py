@@ -1,6 +1,7 @@
-from mysql import connector
-import os
 import logging
+import os
+
+from mysql import connector
 
 
 def getConnection() -> connector.MySQLConnection:
