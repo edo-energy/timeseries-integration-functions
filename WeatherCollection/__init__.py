@@ -174,9 +174,11 @@ def main(params: tuple):
             cur_calls += 1
 
             if response.status_code != 200:
-                raise ValueError(
+                logging.error(
                     f"API Returned: {response.status_code} - {response.text}"
                 )
+                logging.warning("Not all missing days were collected.")
+                break
 
             # parse the json response data
             json_response = response.json()
@@ -223,7 +225,11 @@ def main(params: tuple):
                         )
                     )
 
-                cur.executemany(insert_trends_sql, params)
+                if len(params) > 0:
+                    logging.info("Inserting data.")
+                    cur.executemany(insert_trends_sql, params)
+                else:
+                    logging.warning("No data to insert.")
 
         # indicate that this station was looked at by updating the LastRun
         # column
@@ -239,6 +245,9 @@ def main(params: tuple):
                 """,
                 (station[0],)
             )
+
+        # commit after each station update
+        db.commit()
 
     # update degree days
     with db.cursor() as cur:
