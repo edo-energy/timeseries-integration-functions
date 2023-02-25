@@ -44,7 +44,7 @@ def get_missing_dates(conn: MySQLConnection, pointid: int) -> pd.DataFrame:
     return df_dates
 
 
-def main():
+def main(params: tuple):
     # no more than 1000 calls per run
     cur_calls = 0
 
