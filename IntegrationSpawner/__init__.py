@@ -9,7 +9,7 @@ integrations = [
 ]
 
 
-async def main(mytimer: func.TimerRequest, starter: str) -> None:
+async def main(dailyTimer: func.TimerRequest, starter: str) -> None:
     utc_timestamp = datetime.datetime.utcnow().replace(
         tzinfo=datetime.timezone.utc).isoformat()
 
