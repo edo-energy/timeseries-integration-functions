@@ -108,7 +108,7 @@ def test_WeatherCollection(mocker: MockerFixture, vc_response):
     mocker.patch.dict(os.environ, {"VC_API_KEY": "test"})
 
     # Act
-    main()
+    main(None)
 
     # Assert
     assert mock_api.call_count > 0
