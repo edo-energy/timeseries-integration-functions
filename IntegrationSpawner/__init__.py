@@ -20,6 +20,8 @@ async def main(dailyTimer: func.TimerRequest, starter: str) -> None:
     for integration in integrations:
         logging.info(f"Sending due integration {integration}")
 
-        instance_id = await client.start_new(integration)
+        instance_id = await client.start_new(
+            'IntegrationOrchestrator', None, (integration, None)
+        )
 
         logging.info(f"Started integration with ID '{instance_id}'.")
