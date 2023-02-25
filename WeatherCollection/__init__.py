@@ -173,6 +173,11 @@ def main(params: tuple):
 
             cur_calls += 1
 
+            if response.status_code != 200:
+                raise ValueError(
+                    f"API Returned: {response.status_code} - {response.text}"
+                )
+
             # parse the json response data
             json_response = response.json()
             weather_data = json_response['days'][0]['hours']

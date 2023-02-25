@@ -104,6 +104,7 @@ def test_WeatherCollection(mocker: MockerFixture, vc_response):
 
     mock_api = mocker.patch('WeatherCollection.r.get')
     mock_api.return_value.json = mock_json
+    mock_api.return_value.status_code = 200
 
     mocker.patch.dict(os.environ, {"VC_API_KEY": "test"})
 
