@@ -104,6 +104,7 @@ def main(params: tuple):
 
     # List of parameters to request from weather api
     apiParameters = list(characteristics.keys())
+    apiParameters.append('datetimeEpoch')
 
     # iterate through each of the stations and fill any required data
     for station in df_stations:
