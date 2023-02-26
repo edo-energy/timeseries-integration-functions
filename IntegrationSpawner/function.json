@@ -5,8 +5,7 @@
       "name": "dailyTimer",
       "type": "timerTrigger",
       "direction": "in",
-      "schedule": "0 0 0 * * *",
-      "runOnStartup": true
+      "schedule": "0 0 0 * * *"
     },
     {
       "name": "starter",

@@ -45,6 +45,8 @@ def get_missing_dates(conn: MySQLConnection, pointid: int) -> pd.DataFrame:
 
 
 def main(params: tuple):
+    error = False
+
     # no more than 1000 calls per run
     cur_calls = 0
 
@@ -178,6 +180,7 @@ def main(params: tuple):
                     f"API Returned: {response.status_code} - {response.text}"
                 )
                 logging.warning("Not all missing days were collected.")
+                error = True
                 break
 
             # parse the json response data
@@ -450,3 +453,11 @@ def main(params: tuple):
         cur.execute("""DROP TEMPORARY TABLE weatheralias""")
 
     db.commit()
+
+    if error:
+        raise Exception(
+          "At least one error was encountered that may have resulted in missed"
+          " or missing data."
+        )
+
+    return "Success."
