@@ -23,7 +23,7 @@ LEFT JOIN
   )
 WHERE
   dim_date.date_value >= DATE_SUB(NOW(), INTERVAL %s YEAR)
-  AND dim_date.date_value < DATE(NOW())
+  AND dim_date.date_value < DATE(DATE_SUB(NOW(), INTERVAL 1 DAY))
   AND tr.datevalue IS NULL
 """
 
